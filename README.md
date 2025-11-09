@@ -26,7 +26,7 @@ This project demonstrates how modern **LLMs**, **speech APIs**, and **semantic m
     *   `static/index.html`: Tailwind + Alpine.js UI
 
 ## Architecture Overview
-
+```
  ┌────────────────────────┐
  │       Frontend         │
  │  (Tailwind + AlpineJS) │
@@ -51,7 +51,7 @@ This project demonstrates how modern **LLMs**, **speech APIs**, and **semantic m
      ┌────────────┐                         ┌─────────────────┐
      │  ChromaDB  │ ← Memory Notes          │  TTS (ElevenLabs) │
      └────────────┘                         └─────────────────┘
-
+```
 **Flow:**
 
 1.  User speaks → STT → text.
@@ -80,7 +80,7 @@ If you want a fully open-source version (no paid APIs):
 | --- | --- | --- |
 | LLM | Ollama + LLaMA 3.1 8B | Local inference; slower but free |
 | STT | Whisper.cpp | Local transcription engine |
-| TTS | Coqui TTS | Open-source neural speech |
+| TTS | Coqui TTS or Svara TTS | Open-source neural speech |
 | Memory | FAISS or Weaviate | Replace ChromaDB |
 | Frontend | Svelte / Vue | Optional, modern UI frameworks |
 
@@ -195,5 +195,3 @@ Riverwood Voice Assistant serves as a prototype for Indian bilingual customer su
 Miss Riverwood is not just a conversational demo — it’s a vision of localized, emotionally intelligent AI for real estate and service industries in India.
 
 By combining LLMs + voice + narrative design, it creates a believable human presence through technology.
-
-- - -
