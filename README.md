@@ -113,8 +113,8 @@ This “story-driven agent” design allows the LLM to make reasonable assumptio
 1\. **Clone the repository**
 
 ```
-git clone https://github.com/yourusername/riverwood-voice-assistant.git
-cd riverwood-voice-assistant
+git clone https://github.com/voidisnull/rw_agent.git
+cd rw_agent
 ```
 
 2\. **Create a virtual environment**
