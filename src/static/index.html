@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Miss Riverwood Voice Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+  <style>
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .subtitle-appear {
+      animation: fadeInUp 0.4s ease-out;
+    }
+  </style>
+</head>
+
+<body
+  class="bg-gradient-to-br from-emerald-50 via-white to-green-50 flex flex-col items-center justify-center h-screen font-sans overflow-hidden">
+  <div x-data="voiceAssistant()" class="flex flex-col items-center space-y-12 relative">
+
+    <!-- Main Voice Circle -->
+    <div class="relative flex items-center justify-center w-64 h-64">
+      <!-- Main button -->
+      <div @click="handleMainButton" :class="{
+          'bg-emerald-600': recording,
+          'bg-slate-400 hover:bg-slate-500': !recording
+        }"
+        class="relative z-10 rounded-full h-32 w-32 flex items-center justify-center cursor-pointer transition-all duration-300 shadow-lg">
+
+        <!-- Mic icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 text-white transition-colors duration-300" fill="none"
+          viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- Status indicator -->
+    <div class="h-6 flex items-center justify-center">
+      <div x-show="recording" class="flex items-center space-x-2 subtitle-appear">
+        <div class="h-1.5 w-1.5 rounded-full bg-emerald-600"></div>
+        <span class="text-sm font-medium text-emerald-700">Listening</span>
+      </div>
+    </div>
+
+    <!-- Subtitle Area (floating at bottom) -->
+    <div class="fixed bottom-16 left-0 right-0 flex justify-center px-4">
+      <div x-show="reply" class="max-w-3xl w-full">
+        <div class="subtitle-appear bg-emerald-600 shadow-lg rounded-lg px-6 py-4">
+          <p x-text="reply" class="text-white leading-relaxed text-center font-normal"></p>
+        </div>
+      </div>
+    </div>
+
+    <audio x-ref="audio" class="hidden"></audio>
+  </div>
+
+  <script>
+    function voiceAssistant() {
+      return {
+        recording: false,
+        transcript: '',
+        reply: '',
+        sessionId: localStorage.getItem('riverwood_session') || crypto.randomUUID(),
+        mediaRecorder: null,
+        audioChunks: [],
+        silenceTimer: null,
+        audioContext: null,
+        analyser: null,
+        micSource: null,
+
+        async handleMainButton() {
+          if (!this.recording) {
+            await this.startCall();
+          } else {
+            await this.endSession();
+          }
+        },
+
+        async startCall() {
+          this.recording = true;
+          this.transcript = '';
+          this.reply = '';
+          this.audioChunks = [];
+
+          await this.startRecording();
+        },
+
+        async startRecording() {
+          const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+          this.audioContext = new AudioContext();
+          this.micSource = this.audioContext.createMediaStreamSource(stream);
+          this.analyser = this.audioContext.createAnalyser();
+          this.analyser.fftSize = 256;
+          this.micSource.connect(this.analyser);
+
+          this.mediaRecorder = new MediaRecorder(stream);
+          this.mediaRecorder.ondataavailable = (e) => this.audioChunks.push(e.data);
+          this.mediaRecorder.onstop = async () => {
+            const blob = new Blob(this.audioChunks, {type: 'audio/webm'});
+            await this.sendAudioPipeline(blob);
+          };
+
+          this.mediaRecorder.start();
+          this.detectSilence();
+        },
+
+        detectSilence() {
+          const buffer = new Float32Array(this.analyser.fftSize);
+          const check = () => {
+            this.analyser.getFloatTimeDomainData(buffer);
+            const volume = Math.sqrt(buffer.reduce((sum, val) => sum + val * val, 0) / buffer.length);
+
+            if (volume < 0.01) {
+              if (!this.silenceTimer) {
+                this.silenceTimer = setTimeout(() => this.stopRecording(), 250);
+              }
+            } else {
+              clearTimeout(this.silenceTimer);
+              this.silenceTimer = null;
+            }
+
+            if (this.recording) requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        },
+
+        stopRecording() {
+          if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.stop();
+            if (this.audioContext) this.audioContext.close();
+          }
+        },
+
+        async sendAudioPipeline(blob) {
+          // NEW: Single pipeline call - STT → LLM → TTS in one request
+          const formData = new FormData();
+          formData.append('audio', blob, 'input.webm');
+          formData.append('session_id', this.sessionId);
+
+          try {
+            const resp = await fetch('/process-audio', {method: 'POST', body: formData});
+
+            if (!resp.ok) {
+              const error = await resp.json();
+              console.log('Pipeline error or silence detected:', error);
+
+              // If silence/no speech, restart recording
+              if (this.recording) {
+                this.audioChunks = [];
+                this.startRecording();
+              }
+              return;
+            }
+
+            // Get transcript and reply from headers
+            this.transcript = resp.headers.get('X-Transcript') || '';
+            this.reply = resp.headers.get('X-Reply') || '';
+
+            console.log('Transcript:', this.transcript);
+            console.log('Reply:', this.reply);
+
+            // Get audio blob and play
+            const audioBlob = await resp.blob();
+            const url = URL.createObjectURL(audioBlob);
+            this.$refs.audio.src = url;
+
+            this.$refs.audio.onended = () => {
+              if (this.recording) {
+                this.audioChunks = [];
+                this.startRecording();
+              }
+            };
+
+            await this.$refs.audio.play();
+          } catch (error) {
+            console.error('Pipeline error:', error);
+            this.reply = 'Error processing request.';
+
+            // Restart recording on error
+            if (this.recording) {
+              this.audioChunks = [];
+              this.startRecording();
+            }
+          }
+        },
+
+        async endSession() {
+          this.recording = false;
+
+          // Stop any ongoing recording
+          if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.stop();
+          }
+          if (this.audioContext) {
+            this.audioContext.close();
+          }
+
+          // End session (background summary happens server-side)
+          await fetch('/end', {
+            method: 'POST',
+            body: new URLSearchParams({session_id: this.sessionId})
+          });
+
+          this.reply = 'Call Ended';
+          localStorage.removeItem('riverwood_session');
+        }
+      };
+    }
+  </script>
+</body>
+
+</html>
