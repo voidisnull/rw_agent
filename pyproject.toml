@@ -1,0 +1,9 @@
+[project]
+name = "Voice-AI Assistant"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "pipecat-ai[websocket,groq,silero,runner,cartesia]",
+  "twilio",
+  "aiosqlite",
+]
